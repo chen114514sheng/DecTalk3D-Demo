@@ -1,0 +1,7 @@
+name: dectalk-demo
+channels:
+  - defaults
+dependencies:
+  - python=3.8.18
+  - pip
+

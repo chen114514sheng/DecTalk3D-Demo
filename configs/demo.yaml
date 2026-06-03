@@ -1,0 +1,16 @@
+runtime_dir: runtime
+uploads_dir: runtime/uploads
+outputs_dir: runtime/outputs
+jobs_dir: runtime/jobs
+mean_shape_dir: dataset/mean_shape
+flame_dir: assets/flame
+
+audio:
+  sample_rate: 48000
+  max_seconds: 10.24
+
+render:
+  fps: 25
+  width: 960
+  height: 760
+

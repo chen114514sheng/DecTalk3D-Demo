@@ -1,0 +1,21 @@
+name: DecTalk3D
+gpu: 0
+
+weights:
+  vqvae: weights/dectalk/vqvae.pth
+  generation: weights/dectalk/generation.pth
+
+stage1:
+  embed_dim: 256
+  num_heads: 32
+  num_layers_top: 4
+  num_layers_bottom: 6
+  num_layers_decoder: 4
+  num_embeddings_top: 64
+  num_embeddings_bottom: 256
+
+stage2:
+  num_heads: 8
+  num_layers_top: 6
+  num_layers_bottom: 4
+

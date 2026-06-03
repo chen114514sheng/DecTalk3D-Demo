@@ -1,0 +1,27 @@
+name: ProDecTalk3D
+gpu: 0
+
+weights:
+  vqvae: weights/prodectalk/vqvae.pth
+  diffusion: weights/prodectalk/diffusion.pth
+
+stage1:
+  embed_dim: 256
+  num_heads: 32
+  num_layers_style: 2
+  num_layers_top: 4
+  num_layers_bottom: 6
+  num_embeddings: 256
+
+stage2:
+  num_heads: 32
+  num_layers_temporal: 2
+  num_layers_semantic: 3
+  num_layers: 1
+
+sample:
+  num_sampling_steps_top: 25
+  num_sampling_steps_bottom: 25
+  temperature: 0.2
+  top_k: 5
+

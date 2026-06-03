@@ -1,0 +1,10 @@
+.idea/
+dataset/
+runtime/
+outputs/
+weights/
+__pycache__/
+*.pyc
+assets/pretrained/
+external/GaussianAvatars/
+external/nvdiffrast/

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DecTalk3D Demo</title>
+    <link rel="stylesheet" href="/web/styles.css?v=20260603-4" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>DecTalk3D Demo</h1>
+          <p>FastAPI 单入口演示版</p>
+        </div>
+        <div id="status" class="status">就绪</div>
+      </section>
+
+      <section class="workspace">
+        <aside class="panel controls">
+          <label>
+            <span>模型</span>
+            <select id="model"></select>
+          </label>
+
+          <label>
+            <span>MEAD 身份</span>
+            <select id="person_id"></select>
+          </label>
+
+          <label>
+            <span>Shape 来源</span>
+            <select id="shape_mode"></select>
+          </label>
+
+          <label>
+            <span>文本条件</span>
+            <textarea id="text" rows="4">A man feels happy.</textarea>
+          </label>
+
+          <label>
+            <span>语音文件</span>
+            <input id="audio" type="file" accept="audio/*,.wav" />
+          </label>
+
+          <button id="submit" class="primary">生成网格视频</button>
+          <p id="message" class="message"></p>
+        </aside>
+
+        <section class="panel result">
+          <div class="result-header">
+            <div>
+              <h2 id="result-title">等待生成</h2>
+              <p id="result-subtitle">选择参数并上传语音</p>
+            </div>
+            <a id="download" class="download hidden" href="#" download>下载视频</a>
+          </div>
+
+          <div class="video-frame">
+            <video id="video" class="hidden" controls></video>
+            <div id="placeholder" class="placeholder">网格视频预览</div>
+          </div>
+
+          <div class="job-info">
+            <div>
+              <span>任务</span>
+              <strong id="job-id">-</strong>
+            </div>
+            <div>
+              <span>状态</span>
+              <strong id="job-status">就绪</strong>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="/web/app.js?v=20260603-4"></script>
+  </body>
+</html>
