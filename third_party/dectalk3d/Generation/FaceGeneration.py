@@ -91,7 +91,7 @@ class AudioEncoder(nn.Module):
 
 
 class FaceGenerationModel(nn.Module):
-    def __init__(self, vqvae_dir, embed_dim,
+    def __init__(self, embed_dim,
                  num_heads1, num_layers_top1, num_layers_bottom1, num_layers_decoder,
                  num_embeddings_top, num_embeddings_bottom,
                  num_heads2, num_layers_top2, num_layers_bottom2):
@@ -100,7 +100,6 @@ class FaceGenerationModel(nn.Module):
         self.vqvae = VQVAE2(embed_dim, num_heads1,
                             num_layers_top1, num_layers_bottom1, num_layers_decoder,
                             num_embeddings_top, num_embeddings_bottom)
-        self.vqvae.load_state_dict(torch.load(vqvae_dir, map_location="cpu")['model_state_dict'])
         for param in self.vqvae.parameters():
             param.requires_grad = False
 

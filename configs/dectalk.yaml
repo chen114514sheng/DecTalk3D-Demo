@@ -2,7 +2,6 @@ name: DecTalk3D
 gpu: 0
 
 weights:
-  vqvae: weights/dectalk/vqvae.pth
   generation: weights/dectalk/generation.pth
 
 stage1:
@@ -18,4 +17,3 @@ stage2:
   num_heads: 8
   num_layers_top: 6
   num_layers_bottom: 4
-

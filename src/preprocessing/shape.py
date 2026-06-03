@@ -15,32 +15,54 @@ def _load_npz_shape(path: Path) -> np.ndarray:
     raise ValueError(f"No mean_shape array found in {path}")
 
 
-def load_shape_vector(mean_shape_dir: Path, person_id: str, mode: str) -> np.ndarray:
-    if mode == "zero_shape":
-        return np.zeros((300,), dtype=np.float32)
-    if mode != "mean_shape":
-        raise ValueError(f"Unsupported shape mode: {mode}")
-
-    # 数据集中可能存在 npz 或 npy 两种保存方式，这里按身份依次尝试常见文件名。
-    candidates = [
-        mean_shape_dir / f"{person_id}_mean_shape.npz",
-        mean_shape_dir / f"{person_id}_mean_shape.npy",
-        mean_shape_dir / f"{person_id}.npz",
-        mean_shape_dir / f"{person_id}.npy",
+def shape_candidates(mean_shape_dir: Path, shape_id: str) -> list[Path]:
+    """返回某个身份可能对应的平均 shape 文件路径。"""
+    return [
+        mean_shape_dir / f"{shape_id}_mean_shape.npz",
+        mean_shape_dir / f"{shape_id}_mean_shape.npy",
+        mean_shape_dir / f"{shape_id}.npz",
+        mean_shape_dir / f"{shape_id}.npy",
     ]
-    for path in candidates:
+
+
+def list_shape_ids(mean_shape_dir: Path) -> list[str]:
+    """扫描 dataset/mean_shape，提取可用于下拉框的 shape 身份。"""
+    if not mean_shape_dir.exists():
+        return []
+
+    ids: set[str] = set()
+    for path in mean_shape_dir.iterdir():
+        if path.suffix not in {".npz", ".npy"}:
+            continue
+        stem = path.stem
+        ids.add(stem[: -len("_mean_shape")] if stem.endswith("_mean_shape") else stem)
+    return sorted(ids)
+
+
+def shape_exists(mean_shape_dir: Path, shape_id: str) -> bool:
+    if shape_id == "zero_shape":
+        return True
+    return any(path.exists() for path in shape_candidates(mean_shape_dir, shape_id))
+
+
+def load_shape_vector(mean_shape_dir: Path, shape_id: str) -> np.ndarray:
+    if shape_id == "zero_shape":
+        return np.zeros((300,), dtype=np.float32)
+
+    # shape 身份只控制 FLAME 脸型，可以独立于 MEAD 身份向量选择。
+    for path in shape_candidates(mean_shape_dir, shape_id):
         if path.exists():
             array = _load_npz_shape(path) if path.suffix == ".npz" else np.load(path)
             array = np.asarray(array, dtype=np.float32)
             if array.ndim == 2:
                 array = array[0]
             if array.shape[0] < 300:
-                raise ValueError(f"Mean shape for {person_id} has fewer than 300 values")
+                raise ValueError(f"Mean shape for {shape_id} has fewer than 300 values")
             return array[:300]
-    raise FileNotFoundError(f"Mean shape not found for {person_id}")
+    raise FileNotFoundError(f"Mean shape not found for {shape_id}")
 
 
-def build_shape_sequence(mean_shape_dir: Path, person_id: str, mode: str, frames: int = 256) -> torch.Tensor:
-    shape = load_shape_vector(mean_shape_dir, person_id, mode)
+def build_shape_sequence(mean_shape_dir: Path, shape_id: str, frames: int = 256) -> torch.Tensor:
+    shape = load_shape_vector(mean_shape_dir, shape_id)
     sequence = np.repeat(shape[None, :], frames, axis=0)
     return torch.from_numpy(sequence).float()

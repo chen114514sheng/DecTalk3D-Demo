@@ -2,7 +2,6 @@ name: ProDecTalk3D
 gpu: 0
 
 weights:
-  vqvae: weights/prodectalk/vqvae.pth
   diffusion: weights/prodectalk/diffusion.pth
 
 stage1:
@@ -24,4 +23,3 @@ sample:
   num_sampling_steps_bottom: 25
   temperature: 0.2
   top_k: 5
-

@@ -2,15 +2,15 @@
 
 这是一个面向 Windows 的 WebUI Demo，用于统一运行 **DecTalk3D** 和 **ProDecTalk3D**。
 
-用户上传语音、输入文本、选择 MEAD 身份和 shape 条件后，系统输出 FLAME 网格视频，并保留后续接入 3DGS 渲染所需的驱动参数。
+用户上传语音、输入文本、选择 MEAD 身份和 shape 身份后，系统输出 FLAME 网格视频，并保留后续接入 3DGS 渲染所需的驱动参数。
 
 ![WebUI](docs/webui.png)
 
 ## 特性
 
 - 支持 `DecTalk3D` 与 `ProDecTalk3D` 两个模型。
-- 支持语音、文本、身份向量和 shape 条件输入。
-- shape 可选择 `平均 shape` 或 `零 shape`。
+- 支持语音、文本、身份向量和 shape 身份输入。
+- shape 可选择 `dataset/mean_shape` 中的身份平均 shape，或使用 `0shape`。
 - 渲染方式与 DecTalk3D / ProDecTalk3D 原始渲染脚本保持一致。
 - 输出浏览器可播放的 H.264 `mesh.mp4`。
 - 保存 `drive_params.npz`，为后续 3DGS 渲染预留接口。
@@ -71,11 +71,11 @@ weights/
 其中模型权重默认路径为：
 
 ```text
-weights/dectalk/vqvae.pth
 weights/dectalk/generation.pth
-weights/prodectalk/vqvae.pth
 weights/prodectalk/diffusion.pth
 ```
+
+当前第二阶段 checkpoint 已包含完整推理参数，只需要上面两个权重文件。
 
 ## 预训练缓存
 
@@ -103,7 +103,7 @@ python run_app.py
 http://127.0.0.1:8000
 ```
 
-网页中选择模型、身份、shape 来源，填写文本并上传语音后，点击“生成网格视频”。
+网页中选择模型、MEAD 身份、shape 身份，填写文本并上传语音后，点击“生成网格视频”。
 
 ## 输出
 
@@ -118,7 +118,7 @@ runtime/outputs/{job_id}/drive_params.npz
 
 - `mesh.mp4`：最终网格视频。
 - `vertices.npy`：FLAME 顶点序列。
-- `drive_params.npz`：包含 `vertices / exp / jaw / shape / valid_len / person_id / text / model`，用于后续 3DGS 渲染。
+- `drive_params.npz`：包含 `vertices / exp / jaw / shape / valid_len / person_id / shape_id / text / model`，用于后续 3DGS 渲染。
 
 ## 引用
 

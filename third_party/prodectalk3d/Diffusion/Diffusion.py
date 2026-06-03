@@ -61,7 +61,7 @@ class DiffusionTransformerDenoiser(nn.Module):
 
 
 class FaceGenerationModel(nn.Module):
-    def __init__(self, vqvae_dir, embed_dim,
+    def __init__(self, embed_dim,
                  num_heads1, num_layers_style, num_layers_top1, num_layers_bottom1, num_embeddings,
                  num_heads2, num_layers_temporal, num_layers_semantic, num_layers,
                  gpu, num_diffusion_timesteps=1000, temperature=1.0):
@@ -69,7 +69,6 @@ class FaceGenerationModel(nn.Module):
         # 加载VQVAE
         self.vqvae = VQVAE(embed_dim, num_heads1, num_layers_style, num_layers_top1, num_layers_bottom1,
                            num_embeddings)
-        self.vqvae.load_state_dict(torch.load(vqvae_dir, map_location="cpu")['model_state_dict'])
         for param in self.vqvae.parameters():
             param.requires_grad = False
         # 编码器

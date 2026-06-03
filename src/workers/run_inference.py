@@ -43,7 +43,7 @@ def reset_third_party_modules() -> None:
 
 
 def add_third_party_path(model_key: str) -> Path:
-    # 两个原项目有同名包，切换模型前先清掉旧模块，避免 import 到上一次的实现。
+    # 两个模型源码里有同名包，切换模型前先清理旧模块，避免 import 到上一次的实现。
     reset_third_party_modules()
     folder = "dectalk3d" if model_key == "dectalk" else "prodectalk3d"
     path = PROJECT_ROOT / "third_party" / folder
@@ -52,12 +52,12 @@ def add_third_party_path(model_key: str) -> Path:
 
 
 def load_flame(settings, device: torch.device):
-    # FLAME 依赖 chumpy 旧接口，先补 numpy 1.24 删除的别名再导入。
+    # FLAME 依赖 chumpy 旧接口，导入前补上 numpy 1.24 删除的别名。
     patch_numpy_legacy_aliases()
     from FLAME.FLAME import FLAME
     from Utils import Config
 
-    # FLAME 类来自当前模型的 third_party/FLAME，实际模型文件统一读取 configs/demo.yaml 的 flame_dir。
+    # FLAME 类来自当前模型的 third_party/FLAME，模型文件统一读取 assets/flame。
     flame_model = FLAME(
         Config(
             300,
@@ -71,19 +71,18 @@ def load_flame(settings, device: torch.device):
 
 
 def run_dectalk(config: dict[str, Any], person, text, audio, device):
-    # DecTalk3D 第二阶段是条件生成模型，对应原仓库 Generation/FaceGeneration.py。
+    # DecTalk3D 第二阶段权重 generation.pth 已包含 VQ-VAE 子模块参数。
     from Generation.FaceGeneration import FaceGenerationModel
 
     weights = config["weights"]
-    vqvae_path = resolve_path(weights["vqvae"])
     generation_path = resolve_path(weights["generation"])
-    require_file(vqvae_path, "DecTalk3D VQ-VAE 权重")
     require_file(generation_path, "DecTalk3D generation 权重")
+    state = torch.load(str(generation_path), map_location=device)
+    state_dict = state.get("model_state_dict", state)
 
     stage1 = config["stage1"]
     stage2 = config["stage2"]
     model = FaceGenerationModel(
-        str(vqvae_path),
         stage1["embed_dim"],
         stage1["num_heads"],
         stage1["num_layers_top"],
@@ -95,29 +94,27 @@ def run_dectalk(config: dict[str, Any], person, text, audio, device):
         stage2["num_layers_top"],
         stage2["num_layers_bottom"],
     ).to(device)
-    state = torch.load(str(generation_path), map_location=device)
-    model.load_state_dict(state.get("model_state_dict", state))
+    model.load_state_dict(state_dict, strict=True)
     model.eval()
     with torch.no_grad():
         return model.predict(person, [text], audio)
 
 
 def run_prodectalk(config: dict[str, Any], person, text, audio, device):
-    # ProDecTalk3D 第二阶段是向量量化扩散模型，对应原仓库 Diffusion/Diffusion.py。
+    # ProDecTalk3D 第二阶段权重 diffusion.pth 已包含 VQ-VAE 子模块参数。
     from Diffusion.Diffusion import FaceGenerationModel
     from Utils import EMA
 
     weights = config["weights"]
-    vqvae_path = resolve_path(weights["vqvae"])
     diffusion_path = resolve_path(weights["diffusion"])
-    require_file(vqvae_path, "ProDecTalk3D VQ-VAE 权重")
     require_file(diffusion_path, "ProDecTalk3D diffusion 权重")
+    state = torch.load(str(diffusion_path), map_location=device)
+    state_dict = state.get("model_state_dict", state)
 
     stage1 = config["stage1"]
     stage2 = config["stage2"]
     gpu = int(config.get("gpu", 0))
     model = FaceGenerationModel(
-        str(vqvae_path),
         stage1["embed_dim"],
         stage1["num_heads"],
         stage1["num_layers_style"],
@@ -130,10 +127,9 @@ def run_prodectalk(config: dict[str, Any], person, text, audio, device):
         stage2["num_layers"],
         gpu,
     ).to(device)
-    state = torch.load(str(diffusion_path), map_location=device)
-    model.load_state_dict(state.get("model_state_dict", state))
+    model.load_state_dict(state_dict, strict=True)
     if "ema_state_dict" in state:
-        # ProDecTalk3D 预测脚本使用 EMA 权重生成，这里保持同样的推理权重。
+        # 原 ProDecTalk3D 预测脚本使用 EMA 权重，这里保持一致。
         ema = EMA(model)
         ema.shadow = state["ema_state_dict"]
         ema.apply_shadow(model)
@@ -151,6 +147,10 @@ def run_prodectalk(config: dict[str, Any], person, text, audio, device):
         )
 
 
+def selected_shape_id(job: dict[str, Any]) -> str:
+    return job.get("shape_id") or job["person_id"]
+
+
 def run(job_file: Path) -> None:
     settings = load_demo_settings()
     # 第三方源码首次加载 HuBERT/OpenCLIP 时会查缓存，固定到项目目录便于离线复用。
@@ -160,13 +160,14 @@ def run(job_file: Path) -> None:
     openclip_cache.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("TORCHAUDIO_MODEL_DIR", str(torchaudio_cache))
     os.environ.setdefault("OPENCLIP_CACHE_DIR", str(openclip_cache))
+
     job = update_job(job_file, status="running", error=None)
     try:
         model_key = job["model"]
         config = load_model_config(model_key)
         add_third_party_path(model_key)
 
-        # 按配置选择 GPU；没有 CUDA 时自动退回 CPU，方便先验证 WebUI 流程。
+        # 优先使用配置中的 GPU；没有 CUDA 时自动回退 CPU，方便先验证 WebUI 流程。
         gpu = int(config.get("gpu", 0))
         device = torch.device(f"cuda:{gpu}" if torch.cuda.is_available() else "cpu")
         audio, valid_frames = load_audio_for_model(
@@ -175,11 +176,12 @@ def run(job_file: Path) -> None:
             max_seconds=settings.max_audio_seconds,
         )
         person = torch.tensor([one_hot(job["person_id"])], dtype=torch.float32)
-        # shape 只参与 FLAME 顶点解码；生成模型输出的是 exp 和 jaw。
+
+        # shape 只参与 FLAME 顶点解码，不参与 DecTalk3D / ProDecTalk3D 的身份条件。
+        shape_id = selected_shape_id(job)
         shape = build_shape_sequence(
             settings.mean_shape_dir,
-            job["person_id"],
-            job["shape_mode"],
+            shape_id,
             frames=int(settings.sample_rate * settings.max_audio_seconds) // 1920,
         )
         audio = audio.to(device)
@@ -194,7 +196,7 @@ def run(job_file: Path) -> None:
 
         exp = exp.squeeze(0)
         jaw = jaw.squeeze(0)
-        # 两个模型最终都统一为 FLAME 参数，再由 FLAME 解码为每帧顶点。
+        # 两个模型最终都输出 FLAME 表情和下颌参数，再统一解码为逐帧顶点。
         vertices = flame_vertices(flame_model, shape, exp, jaw)
         keep_frames = min(valid_frames, int(vertices.shape[0]))
         vertices_np = vertices[:keep_frames].detach().cpu().numpy()
@@ -218,6 +220,7 @@ def run(job_file: Path) -> None:
             shape=shape_np,
             valid_len=keep_frames,
             person_id=job["person_id"],
+            shape_id=shape_id,
             text=job["text"],
             model=model_key,
         )

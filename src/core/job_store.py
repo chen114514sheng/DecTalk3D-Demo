@@ -56,7 +56,7 @@ def create_job(
     model: str,
     text: str,
     person_id: str,
-    shape_mode: str,
+    shape_id: str,
     audio_path: Path,
 ) -> dict[str, Any]:
     job_id = new_job_id()
@@ -70,7 +70,7 @@ def create_job(
         "model": model,
         "text": text,
         "person_id": person_id,
-        "shape_mode": shape_mode,
+        "shape_id": shape_id,
         "audio_path": str(audio_path),
         "output_dir": str(output_dir),
         "video_path": None,

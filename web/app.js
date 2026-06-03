@@ -1,6 +1,6 @@
 const modelSelect = document.getElementById("model");
 const personSelect = document.getElementById("person_id");
-const shapeSelect = document.getElementById("shape_mode");
+const shapeSelect = document.getElementById("shape_id");
 const textInput = document.getElementById("text");
 const audioInput = document.getElementById("audio");
 const submitButton = document.getElementById("submit");
@@ -42,14 +42,18 @@ async function loadOptions() {
   const data = await response.json();
   fillSelect(modelSelect, data.models, (item) => item.key, (item) => item.label);
   fillSelect(personSelect, data.person_ids, (item) => item, (item) => item);
-  fillSelect(shapeSelect, data.shape_modes, (item) => item.key, (item) => item.label);
+  fillSelect(shapeSelect, data.shape_options, (item) => item.key, (item) => item.label);
+}
+
+function currentShapeLabel() {
+  return shapeSelect.options[shapeSelect.selectedIndex]?.textContent || shapeSelect.value;
 }
 
 function showJob(job) {
   jobId.textContent = job.id || "-";
   setStatus(job.status || "Ready");
   resultTitle.textContent = modelSelect.options[modelSelect.selectedIndex]?.textContent || job.model;
-  resultSubtitle.textContent = `${job.person_id || personSelect.value} - ${job.shape_mode || shapeSelect.value}`;
+  resultSubtitle.textContent = `${job.person_id || personSelect.value} / ${job.shape_id || currentShapeLabel()}`;
   message.textContent = job.status === "failed" ? job.error || "生成失败，请查看终端日志。" : "";
 
   if (job.video_url) {
@@ -90,7 +94,7 @@ submitButton.addEventListener("click", async () => {
   form.append("model", modelSelect.value);
   form.append("text", textInput.value.trim());
   form.append("person_id", personSelect.value);
-  form.append("shape_mode", shapeSelect.value);
+  form.append("shape_id", shapeSelect.value);
   form.append("audio", file);
 
   submitButton.disabled = true;

@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from src.core.identity import PERSON_IDS, ensure_identity_file
 from src.core.job_store import create_job, read_job, run_worker
 from src.core.settings import load_demo_settings
+from src.preprocessing.shape import list_shape_ids, shape_exists
 
 settings = load_demo_settings()
 ensure_identity_file(settings.root / "assets" / "identity" / "person_ids.json")
@@ -47,9 +48,10 @@ def health():
 
 @app.get("/api/options")
 def options():
-    available_mean_shape = []
-    if settings.mean_shape_dir.exists():
-        available_mean_shape = sorted(path.name for path in settings.mean_shape_dir.glob("*_mean_shape.npz"))
+    shape_ids = list_shape_ids(settings.mean_shape_dir)
+    shape_options = [{"key": shape_id, "label": f"{shape_id} shape"} for shape_id in shape_ids]
+    shape_options.append({"key": "zero_shape", "label": "0shape"})
+
     # 前端下拉框只依赖这个接口，后续新增模型或 shape 来源时从这里扩展。
     return {
         "models": [
@@ -57,11 +59,7 @@ def options():
             {"key": "prodectalk", "label": "ProDecTalk3D"},
         ],
         "person_ids": PERSON_IDS,
-        "shape_modes": [
-            {"key": "mean_shape", "label": "平均 shape"},
-            {"key": "zero_shape", "label": "零 shape"},
-        ],
-        "mean_shape_files": available_mean_shape,
+        "shape_options": shape_options,
     }
 
 
@@ -71,7 +69,7 @@ def submit_job(
     model: str = Form(...),
     text: str = Form(...),
     person_id: str = Form(...),
-    shape_mode: str = Form(...),
+    shape_id: str = Form(...),
     audio: UploadFile = File(...),
 ):
     # 这里先做轻量校验；耗时的模型推理交给后台 worker 子进程。
@@ -79,8 +77,9 @@ def submit_job(
         raise HTTPException(status_code=400, detail="不支持的模型")
     if person_id not in PERSON_IDS:
         raise HTTPException(status_code=400, detail="未知的 MEAD 身份")
-    if shape_mode not in {"mean_shape", "zero_shape"}:
-        raise HTTPException(status_code=400, detail="不支持的 shape 来源")
+
+    if not shape_exists(settings.mean_shape_dir, shape_id):
+        raise HTTPException(status_code=400, detail="不支持的 shape 身份")
     if not text.strip():
         raise HTTPException(status_code=400, detail="文本条件不能为空")
 
@@ -90,7 +89,7 @@ def submit_job(
         shutil.copyfileobj(audio.file, handle)
 
     # FastAPI BackgroundTasks 只负责启动 worker，任务状态通过 runtime/jobs/{job_id}/job.json 轮询。
-    job = create_job(settings, model, text.strip(), person_id, shape_mode, upload_path)
+    job = create_job(settings, model, text.strip(), person_id, shape_id, upload_path)
     background_tasks.add_task(run_worker, settings, job["id"])
     return job
 
