@@ -63,7 +63,6 @@ FLAME 文件已随仓库提供，`dataset/` 和 `weights/` 下的文件通过网
 
 - weights: https://pan.baidu.com/s/1vx3C2hzIIXoZeCdYXzJ7lA?pwd=p9dv
 - dataset: https://pan.baidu.com/s/1gLdblZ8i60-A_6hvG-H5Zw?pwd=p9dv
-- 提取码：`p9dv`
 
 下载后保持以下目录结构：
 
