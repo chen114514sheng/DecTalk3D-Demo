@@ -6,6 +6,11 @@
 
 ![WebUI](docs/webui.png)
 
+相关仓库：
+
+- DecTalk3D: https://github.com/chen114514sheng/DecTalk3D
+- ProDecTalk3D: https://github.com/chen114514sheng/ProDecTalk3D
+
 ## 特性
 
 - 支持 `DecTalk3D` 与 `ProDecTalk3D` 两个模型。
@@ -56,8 +61,8 @@ pip install -r requirements-torch-cpu.txt
 
 FLAME 文件已随仓库提供，`dataset/` 和 `weights/` 下的文件通过网盘下载：
 
-- weights: [百度网盘](https://pan.baidu.com/s/1vx3C2hzIIXoZeCdYXzJ7lA?pwd=p9dv)
-- dataset: [百度网盘](https://pan.baidu.com/s/1gLdblZ8i60-A_6hvG-H5Zw?pwd=p9dv)
+- weights: https://pan.baidu.com/s/1vx3C2hzIIXoZeCdYXzJ7lA?pwd=p9dv
+- dataset: https://pan.baidu.com/s/1gLdblZ8i60-A_6hvG-H5Zw?pwd=p9dv
 - 提取码：`p9dv`
 
 下载后保持以下目录结构：
@@ -138,8 +143,3 @@ runtime/outputs/{job_id}/drive_params.npz
   note   = {Unpublished manuscript and code available at https://github.com/chen114514sheng/ProDecTalk3D}
 }
 ```
-
-相关仓库：
-
-- DecTalk3D: https://github.com/chen114514sheng/DecTalk3D
-- ProDecTalk3D: https://github.com/chen114514sheng/ProDecTalk3D
