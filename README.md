@@ -54,12 +54,11 @@ pip install -r requirements-torch-cpu.txt
 
 ## 权重
 
-百度网盘只存放 `dataset/` 和 `weights/` 下的文件：
+FLAME 文件已随仓库提供，`dataset/` 和 `weights/` 下的文件通过网盘下载：
 
-```text
-链接：待补充
-提取码：待补充
-```
+- weights: [百度网盘](https://pan.baidu.com/s/1vx3C2hzIIXoZeCdYXzJ7lA?pwd=p9dv)
+- dataset: [百度网盘](https://pan.baidu.com/s/1gLdblZ8i60-A_6hvG-H5Zw?pwd=p9dv)
+- 提取码：`p9dv`
 
 下载后保持以下目录结构：
 
@@ -74,8 +73,6 @@ weights/
 weights/dectalk/generation.pth
 weights/prodectalk/diffusion.pth
 ```
-
-当前第二阶段 checkpoint 已包含完整推理参数，只需要上面两个权重文件。
 
 ## 预训练缓存
 
