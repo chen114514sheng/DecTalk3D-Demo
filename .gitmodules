@@ -1,0 +1,6 @@
+[submodule "external/GaussianAvatars"]
+	path = external/GaussianAvatars
+	url = https://github.com/ShenhanQian/GaussianAvatars.git
+[submodule "external/nvdiffrast"]
+	path = external/nvdiffrast
+	url = https://github.com/NVlabs/nvdiffrast.git
