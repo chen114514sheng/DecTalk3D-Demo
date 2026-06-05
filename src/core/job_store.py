@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -77,6 +78,7 @@ def create_job(
         "vertices_path": None,
         "drive_params_path": None,
         "log_path": str(job_dir(settings, job_id) / "worker.log"),
+        "progress": "等待启动",
         "error": None,
     }
     write_job(settings, job_id, payload)
@@ -86,26 +88,40 @@ def create_job(
 def run_worker(settings: DemoSettings, job_id: str) -> None:
     path = job_file(settings, job_id)
     log_path = job_dir(settings, job_id) / "worker.log"
+    patch_job(settings, job_id, status="running", progress="启动推理进程", error=None)
     # 推理过程会加载大模型，放到独立子进程里执行，避免阻塞 FastAPI 主进程。
     command = [
         sys.executable,
+        "-u",
         "-m",
         "src.workers.run_inference",
         "--job-file",
         str(path),
     ]
+    env = {
+        **os.environ,
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONIOENCODING": "utf-8",
+    }
     with log_path.open("w", encoding="utf-8", errors="replace") as log:
         log.write(f"Command: {' '.join(command)}\n\n")
         log.flush()
         result = subprocess.run(
             command,
             cwd=str(settings.root),
+            env=env,
             stdout=log,
             stderr=subprocess.STDOUT,
             check=False,
         )
 
     payload = read_job(settings, job_id)
+    if payload.get("status") == "completed" and payload.get("progress") != "完成":
+        patch_job(settings, job_id, progress="完成")
+        return
+    if payload.get("status") == "failed" and payload.get("progress") != "失败":
+        patch_job(settings, job_id, progress="失败")
+        return
     if payload.get("status") == "running":
         # 子进程异常退出但没有写失败状态时，在任务文件里补一条可读错误。
         tail = ""

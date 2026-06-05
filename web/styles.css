@@ -113,6 +113,25 @@ textarea {
   background: #fff;
 }
 
+.status[data-status="running"],
+.status[data-status="queued"] {
+  border-color: #b9c8dc;
+  background: #eef5ff;
+  color: #235184;
+}
+
+.status[data-status="completed"] {
+  border-color: #b8c9bf;
+  background: #e8f1ec;
+  color: #245b3d;
+}
+
+.status[data-status="failed"] {
+  border-color: #d5b2b2;
+  background: #faeded;
+  color: #8d2f2f;
+}
+
 .primary {
   min-height: 42px;
   border: 0;
@@ -178,7 +197,7 @@ textarea {
 
 .job-info {
   display: grid;
-  grid-template-columns: 1fr 160px;
+  grid-template-columns: minmax(0, 1fr) 150px 190px;
   gap: 12px;
   margin-top: 14px;
 }

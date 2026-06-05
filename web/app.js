@@ -10,6 +10,7 @@ const resultTitle = document.getElementById("result-title");
 const resultSubtitle = document.getElementById("result-subtitle");
 const jobId = document.getElementById("job-id");
 const jobStatus = document.getElementById("job-status");
+const jobProgress = document.getElementById("job-progress");
 const video = document.getElementById("video");
 const placeholder = document.getElementById("placeholder");
 const download = document.getElementById("download");
@@ -22,9 +23,13 @@ const labels = {
   Ready: "就绪",
 };
 
-function setStatus(value) {
-  statusBox.textContent = labels[value] || value;
-  jobStatus.textContent = labels[value] || value;
+function setStatus(value, progress = "") {
+  const label = labels[value] || value;
+  const text = progress && value === "running" ? `${label}：${progress}` : label;
+  statusBox.textContent = text;
+  jobStatus.textContent = label;
+  jobProgress.textContent = progress || "-";
+  statusBox.dataset.status = value;
 }
 
 function fillSelect(select, items, getValue, getLabel) {
@@ -51,7 +56,7 @@ function currentShapeLabel() {
 
 function showJob(job) {
   jobId.textContent = job.id || "-";
-  setStatus(job.status || "Ready");
+  setStatus(job.status || "Ready", job.progress || "");
   resultTitle.textContent = modelSelect.options[modelSelect.selectedIndex]?.textContent || job.model;
   resultSubtitle.textContent = `${job.person_id || personSelect.value} / ${job.shape_id || currentShapeLabel()}`;
   message.textContent = job.status === "failed" ? job.error || "生成失败，请查看终端日志。" : "";
@@ -68,12 +73,19 @@ function showJob(job) {
 
 async function pollJob(id) {
   const timer = window.setInterval(async () => {
-    const response = await fetch(`/api/jobs/${id}`);
-    const job = await response.json();
-    showJob(job);
-    if (job.status === "completed" || job.status === "failed") {
+    try {
+      const response = await fetch(`/api/jobs/${id}`);
+      const job = await response.json();
+      showJob(job);
+      if (job.status === "completed" || job.status === "failed") {
+        window.clearInterval(timer);
+        submitButton.disabled = false;
+      }
+    } catch {
       window.clearInterval(timer);
       submitButton.disabled = false;
+      setStatus("failed", "连接中断");
+      message.textContent = "无法连接后端服务，请确认 run_app.py 是否仍在运行。";
     }
   }, 1500);
 }
@@ -98,7 +110,7 @@ submitButton.addEventListener("click", async () => {
   form.append("audio", file);
 
   submitButton.disabled = true;
-  setStatus("queued");
+  setStatus("queued", "等待提交");
   const response = await fetch("/api/jobs", { method: "POST", body: form });
   const job = await response.json();
   if (!response.ok) {
@@ -107,8 +119,19 @@ submitButton.addEventListener("click", async () => {
     return;
   }
   showJob(job);
+  await pollOnce(job.id);
   pollJob(job.id);
 });
+
+async function pollOnce(id) {
+  try {
+    const response = await fetch(`/api/jobs/${id}`);
+    const job = await response.json();
+    showJob(job);
+  } catch {
+    message.textContent = "任务已提交，但暂时无法刷新状态。";
+  }
+}
 
 loadOptions().catch(() => {
   message.textContent = "后端服务不可用，请确认 run_app.py 已启动。";
