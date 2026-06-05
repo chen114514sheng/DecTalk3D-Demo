@@ -20,7 +20,12 @@ def _run_ffmpeg(command: list[str]) -> None:
         raise RuntimeError(f"ffmpeg 执行失败：{detail}")
 
 
-def transcode_video(video_path: Path, output_path: Path) -> Path:
+def transcode_video(
+    video_path: Path,
+    output_path: Path,
+    preset: str = "veryfast",
+    crf: int = 20,
+) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     # OpenCV 写出的 mp4v 在浏览器里可能黑屏，统一转成 H.264/yuv420p。
     _run_ffmpeg(
@@ -36,9 +41,9 @@ def transcode_video(video_path: Path, output_path: Path) -> Path:
             "-pix_fmt",
             "yuv420p",
             "-preset",
-            "veryfast",
+            preset,
             "-crf",
-            "20",
+            str(crf),
             "-movflags",
             "+faststart",
             str(output_path),
@@ -47,7 +52,13 @@ def transcode_video(video_path: Path, output_path: Path) -> Path:
     return output_path
 
 
-def mux_audio(video_path: Path, audio_path: Path, output_path: Path) -> Path:
+def mux_audio(
+    video_path: Path,
+    audio_path: Path,
+    output_path: Path,
+    preset: str = "veryfast",
+    crf: int = 20,
+) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     # 合成时同时重编码视频，保证最终 mesh.mp4 能被浏览器稳定播放。
     _run_ffmpeg(
@@ -67,9 +78,9 @@ def mux_audio(video_path: Path, audio_path: Path, output_path: Path) -> Path:
             "-pix_fmt",
             "yuv420p",
             "-preset",
-            "veryfast",
+            preset,
             "-crf",
-            "20",
+            str(crf),
             "-c:a",
             "aac",
             "-b:a",

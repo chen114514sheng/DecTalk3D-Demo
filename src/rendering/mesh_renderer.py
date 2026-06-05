@@ -18,7 +18,7 @@ def render_vertices_to_video(
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     # 渲染参数与 DecTalk3D 的 Render0.py、ProDecTalk3D 的 Render.py 保持一致。
-    ref_mesh = trimesh.load_mesh(str(template_mesh_path))
+    ref_mesh = trimesh.load_mesh(str(template_mesh_path), process=False)
     writer = cv2.VideoWriter(
         str(output_path),
         cv2.VideoWriter.fourcc(*"mp4v"),

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
+import threading
 import uuid
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from src.core.settings import DemoSettings
+
+WORKER_LOCK = threading.Lock()
 
 
 def utc_now() -> str:
@@ -88,32 +90,22 @@ def create_job(
 def run_worker(settings: DemoSettings, job_id: str) -> None:
     path = job_file(settings, job_id)
     log_path = job_dir(settings, job_id) / "worker.log"
-    patch_job(settings, job_id, status="running", progress="启动推理进程", error=None)
-    # 推理过程会加载大模型，放到独立子进程里执行，避免阻塞 FastAPI 主进程。
-    command = [
-        sys.executable,
-        "-u",
-        "-m",
-        "src.workers.run_inference",
-        "--job-file",
-        str(path),
-    ]
-    env = {
-        **os.environ,
-        "PYTHONUNBUFFERED": "1",
-        "PYTHONIOENCODING": "utf-8",
-    }
-    with log_path.open("w", encoding="utf-8", errors="replace") as log:
-        log.write(f"Command: {' '.join(command)}\n\n")
-        log.flush()
-        result = subprocess.run(
-            command,
-            cwd=str(settings.root),
-            env=env,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            check=False,
-        )
+    patch_job(settings, job_id, status="running", progress="等待推理队列", error=None)
+    os.environ.setdefault("PYTHONUNBUFFERED", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+    with WORKER_LOCK:
+        patch_job(settings, job_id, status="running", progress="启动推理任务", error=None)
+        with log_path.open("w", encoding="utf-8", errors="replace") as log:
+            log.write(f"Worker: in-process\nJob file: {path}\n\n")
+            log.flush()
+            try:
+                from src.workers.run_inference import run as run_inference
+
+                with redirect_stdout(log), redirect_stderr(log):
+                    run_inference(path)
+            except Exception as exc:
+                patch_job(settings, job_id, status="failed", error=str(exc))
 
     payload = read_job(settings, job_id)
     if payload.get("status") == "completed" and payload.get("progress") != "完成":
@@ -131,5 +123,5 @@ def run_worker(settings: DemoSettings, job_id: str) -> None:
             settings,
             job_id,
             status="failed",
-            error=f"Worker exited without completing the job. Return code: {result.returncode}\n{tail}",
+            error=f"Worker exited without completing the job.\n{tail}",
         )

@@ -25,6 +25,8 @@ class DemoSettings:
     fps: int
     frame_width: int
     frame_height: int
+    video_preset: str
+    video_crf: int
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -58,6 +60,8 @@ def load_demo_settings(config_path: Path | None = None) -> DemoSettings:
         fps=int(render.get("fps", 25)),
         frame_width=int(render.get("width", 960)),
         frame_height=int(render.get("height", 760)),
+        video_preset=str(render.get("video_preset", "veryfast")),
+        video_crf=int(render.get("video_crf", 20)),
     )
     # 启动 API 时提前创建运行目录，避免上传和任务写入时再处理目录缺失。
     for directory in [

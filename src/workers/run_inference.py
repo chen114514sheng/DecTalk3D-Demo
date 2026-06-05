@@ -5,6 +5,8 @@ import json
 import os
 import shutil
 import sys
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,9 @@ from src.preprocessing.shape import build_shape_sequence
 from src.rendering.mesh_renderer import render_vertices_to_video
 from src.rendering.video import mux_audio, transcode_video
 
+MODEL_CACHE: dict[tuple[Any, ...], torch.nn.Module] = {}
+FLAME_CACHE: dict[tuple[Any, ...], torch.nn.Module] = {}
+
 
 def update_job(path: Path, **changes: Any) -> dict[str, Any]:
     job = json.loads(path.read_text(encoding="utf-8"))
@@ -35,6 +40,39 @@ def require_file(path: Path, label: str) -> None:
         raise FileNotFoundError(f"{label} 缺失：{path}")
 
 
+@dataclass
+class FlameConfig:
+    flame_model_path: str
+    static_landmark_embedding_path: str
+    dynamic_landmark_embedding_path: str
+    shape_params: int = 300
+    expression_params: int = 100
+    batch_size: int = 256
+    use_face_contour: bool = True
+    use_3D_translation: bool = True
+
+
+def configure_torch() -> None:
+    torch.set_grad_enabled(False)
+    if torch.cuda.is_available():
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+
+
+def load_checkpoint(path: Path, device: torch.device):
+    try:
+        return torch.load(str(path), map_location=device, weights_only=True)
+    except Exception:
+        return torch.load(str(path), map_location=device)
+
+
+def log_step(started_at: float, label: str) -> float:
+    now = time.perf_counter()
+    print(f"[timing] {label}: {now - started_at:.2f}s", flush=True)
+    return now
+
+
 def reset_third_party_modules() -> None:
     prefixes = ("FLAME", "VQVAE2", "Generation", "Diffusion", "Utils")
     for name in list(sys.modules):
@@ -47,37 +85,62 @@ def add_third_party_path(model_key: str) -> Path:
     reset_third_party_modules()
     folder = "dectalk3d" if model_key == "dectalk" else "prodectalk3d"
     path = PROJECT_ROOT / "third_party" / folder
+    for existing in [
+        str(PROJECT_ROOT / "third_party" / "dectalk3d"),
+        str(PROJECT_ROOT / "third_party" / "prodectalk3d"),
+    ]:
+        while existing in sys.path:
+            sys.path.remove(existing)
     sys.path.insert(0, str(path))
     return path
 
 
-def load_flame(settings, device: torch.device):
+def load_flame(settings, device: torch.device, batch_size: int, model_key: str):
+    cache_key = ("flame", model_key, str(device), batch_size)
+    cached = FLAME_CACHE.get(cache_key)
+    if cached is not None:
+        print(f"[cache] reuse FLAME batch_size={batch_size}", flush=True)
+        return cached
+
     # FLAME 依赖 chumpy 旧接口，导入前补上 numpy 1.24 删除的别名。
     patch_numpy_legacy_aliases()
     from FLAME.FLAME import FLAME
-    from Utils import Config
 
-    # FLAME 类来自当前模型的 third_party/FLAME，模型文件统一读取 assets/flame。
-    flame_model = FLAME(
-        Config(
-            300,
-            100,
-            str(settings.flame_dir / "flame_model" / "generic_model.pkl"),
-            str(settings.flame_dir / "flame_model" / "flame_static_embedding.pkl"),
-            str(settings.flame_dir / "flame_model" / "flame_dynamic_embedding.npy"),
-        )
+    # Avoid importing Utils.py here; it pulls open_clip/torchvision before the
+    # model needs them and can add a long delay to FLAME-only setup.
+    config = FlameConfig(
+        flame_model_path=str(settings.flame_dir / "flame_model" / "generic_model.pkl"),
+        static_landmark_embedding_path=str(settings.flame_dir / "flame_model" / "flame_static_embedding.pkl"),
+        dynamic_landmark_embedding_path=str(settings.flame_dir / "flame_model" / "flame_dynamic_embedding.npy"),
+        batch_size=batch_size,
     )
-    return flame_model.to(device).eval()
+    flame_model = FLAME(
+        config
+    )
+    flame_model = flame_model.to(device).eval()
+    FLAME_CACHE[cache_key] = flame_model
+    return flame_model
 
 
-def run_dectalk(config: dict[str, Any], person, text, audio, device):
+def load_dectalk_model(config: dict[str, Any], device: torch.device):
     # DecTalk3D 第二阶段权重 generation.pth 已包含 VQ-VAE 子模块参数。
-    from Generation.FaceGeneration import FaceGenerationModel
-
     weights = config["weights"]
     generation_path = resolve_path(weights["generation"])
     require_file(generation_path, "DecTalk3D generation 权重")
-    state = torch.load(str(generation_path), map_location=device)
+    cache_key = (
+        "dectalk",
+        str(device),
+        str(generation_path),
+        generation_path.stat().st_mtime_ns,
+    )
+    cached = MODEL_CACHE.get(cache_key)
+    if cached is not None:
+        print("[cache] reuse DecTalk3D model", flush=True)
+        return cached
+
+    from Generation.FaceGeneration import FaceGenerationModel
+
+    state = load_checkpoint(generation_path, device)
     state_dict = state.get("model_state_dict", state)
 
     stage1 = config["stage1"]
@@ -96,19 +159,36 @@ def run_dectalk(config: dict[str, Any], person, text, audio, device):
     ).to(device)
     model.load_state_dict(state_dict, strict=True)
     model.eval()
-    with torch.no_grad():
+    MODEL_CACHE[cache_key] = model
+    return model
+
+
+def run_dectalk(config: dict[str, Any], person, text, audio, device):
+    model = load_dectalk_model(config, device)
+    with torch.inference_mode():
         return model.predict(person, [text], audio)
 
 
-def run_prodectalk(config: dict[str, Any], person, text, audio, device):
+def load_prodectalk_model(config: dict[str, Any], device: torch.device):
     # ProDecTalk3D 第二阶段权重 diffusion.pth 已包含 VQ-VAE 子模块参数。
-    from Diffusion.Diffusion import FaceGenerationModel
-    from Utils import EMA
-
     weights = config["weights"]
     diffusion_path = resolve_path(weights["diffusion"])
     require_file(diffusion_path, "ProDecTalk3D diffusion 权重")
-    state = torch.load(str(diffusion_path), map_location=device)
+    cache_key = (
+        "prodectalk",
+        str(device),
+        str(diffusion_path),
+        diffusion_path.stat().st_mtime_ns,
+    )
+    cached = MODEL_CACHE.get(cache_key)
+    if cached is not None:
+        print("[cache] reuse ProDecTalk3D model", flush=True)
+        return cached
+
+    from Diffusion.Diffusion import FaceGenerationModel
+    from Utils import EMA
+
+    state = load_checkpoint(diffusion_path, device)
     state_dict = state.get("model_state_dict", state)
 
     stage1 = config["stage1"]
@@ -134,8 +214,14 @@ def run_prodectalk(config: dict[str, Any], person, text, audio, device):
         ema.shadow = state["ema_state_dict"]
         ema.apply_shadow(model)
     model.eval()
+    MODEL_CACHE[cache_key] = model
+    return model
+
+
+def run_prodectalk(config: dict[str, Any], person, text, audio, device):
+    model = load_prodectalk_model(config, device)
     sample = config.get("sample", {})
-    with torch.no_grad():
+    with torch.inference_mode():
         return model.sample(
             person,
             [text],
@@ -152,6 +238,8 @@ def selected_shape_id(job: dict[str, Any]) -> str:
 
 
 def run(job_file: Path) -> None:
+    configure_torch()
+    step_started_at = time.perf_counter()
     settings = load_demo_settings()
     # 第三方源码首次加载 HuBERT/OpenCLIP 时会查缓存，固定到项目目录便于离线复用。
     torchaudio_cache = PROJECT_ROOT / "assets" / "pretrained" / "torchaudio"
@@ -166,38 +254,53 @@ def run(job_file: Path) -> None:
         model_key = job["model"]
         config = load_model_config(model_key)
         add_third_party_path(model_key)
+        step_started_at = log_step(step_started_at, "load config")
 
         # 优先使用配置中的 GPU；没有 CUDA 时自动回退 CPU，方便先验证 WebUI 流程。
         gpu = int(config.get("gpu", 0))
         device = torch.device(f"cuda:{gpu}" if torch.cuda.is_available() else "cpu")
+        print(f"[runtime] device={device}", flush=True)
         audio, valid_frames = load_audio_for_model(
             Path(job["audio_path"]),
             target_sample_rate=settings.sample_rate,
             max_seconds=settings.max_audio_seconds,
+            pad_to_max=True,
+            frame_alignment=16,
         )
+        print(
+            f"[runtime] audio_frames={int(audio.shape[1]) // 1920}, valid_frames={valid_frames}",
+            flush=True,
+        )
+        step_started_at = log_step(step_started_at, "load audio")
         person = torch.tensor([one_hot(job["person_id"])], dtype=torch.float32)
 
         # shape 只参与 FLAME 顶点解码，不参与 DecTalk3D / ProDecTalk3D 的身份条件。
         shape_id = selected_shape_id(job)
-        shape = build_shape_sequence(
-            settings.mean_shape_dir,
-            shape_id,
-            frames=int(settings.sample_rate * settings.max_audio_seconds) // 1920,
-        )
         audio = audio.to(device)
         person = person.to(device)
-        shape = shape.to(device)
-        flame_model = load_flame(settings, device)
+        step_started_at = log_step(step_started_at, "prepare tensors")
 
         if model_key == "dectalk":
+            update_job(job_file, progress="模型推理")
             exp, jaw = run_dectalk(config, person, job["text"], audio, device)
         else:
+            update_job(job_file, progress="扩散采样")
             exp, jaw = run_prodectalk(config, person, job["text"], audio, device)
+        print(f"[runtime] generated_frames={int(exp.shape[1])}", flush=True)
+        step_started_at = log_step(step_started_at, "model inference")
 
         exp = exp.squeeze(0)
         jaw = jaw.squeeze(0)
         # 两个模型最终都输出 FLAME 表情和下颌参数，再统一解码为逐帧顶点。
+        update_job(job_file, progress="FLAME 解码")
+        shape = build_shape_sequence(
+            settings.mean_shape_dir,
+            shape_id,
+            frames=int(exp.shape[0]),
+        ).to(device)
+        flame_model = load_flame(settings, device, batch_size=int(exp.shape[0]), model_key=model_key)
         vertices = flame_vertices(flame_model, shape, exp, jaw)
+        step_started_at = log_step(step_started_at, "flame decode")
         keep_frames = min(valid_frames, int(vertices.shape[0]))
         vertices_np = vertices[:keep_frames].detach().cpu().numpy()
         exp_np = exp[:keep_frames].detach().cpu().numpy()
@@ -224,6 +327,8 @@ def run(job_file: Path) -> None:
             text=job["text"],
             model=model_key,
         )
+        step_started_at = log_step(step_started_at, "save outputs")
+        update_job(job_file, progress="渲染预览视频")
         render_vertices_to_video(
             vertices_np,
             settings.flame_dir / "flame_sample.ply",
@@ -232,13 +337,27 @@ def run(job_file: Path) -> None:
             width=settings.frame_width,
             height=settings.frame_height,
         )
+        step_started_at = log_step(step_started_at, "render video")
+        update_job(job_file, progress="合成音频")
         try:
-            mux_audio(silent_video_path, Path(job["audio_path"]), final_video_path)
+            mux_audio(
+                silent_video_path,
+                Path(job["audio_path"]),
+                final_video_path,
+                preset=settings.video_preset,
+                crf=settings.video_crf,
+            )
         except Exception:
             try:
-                transcode_video(silent_video_path, final_video_path)
+                transcode_video(
+                    silent_video_path,
+                    final_video_path,
+                    preset=settings.video_preset,
+                    crf=settings.video_crf,
+                )
             except Exception:
                 shutil.copyfile(silent_video_path, final_video_path)
+        step_started_at = log_step(step_started_at, "mux audio")
 
         update_job(
             job_file,

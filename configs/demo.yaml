@@ -13,4 +13,6 @@ render:
   fps: 25
   width: 960
   height: 760
+  video_preset: veryfast
+  video_crf: 20
 

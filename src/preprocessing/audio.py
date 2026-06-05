@@ -74,6 +74,8 @@ def load_audio_for_model(
     path: Path,
     target_sample_rate: int = 48000,
     max_seconds: float = 10.24,
+    pad_to_max: bool = True,
+    frame_alignment: int = 16,
 ) -> tuple[torch.Tensor, int]:
     waveform, sample_rate = _load_with_fallback(path, target_sample_rate)
     if waveform.shape[0] > 1:
@@ -81,14 +83,28 @@ def load_audio_for_model(
     if sample_rate != target_sample_rate:
         waveform = torchaudio.functional.resample(waveform, sample_rate, target_sample_rate)
 
+    samples_per_frame = 1920
     max_samples = int(target_sample_rate * max_seconds)
+    max_frames = max_samples // samples_per_frame
     waveform = waveform[:, :max_samples]
     valid_samples = int(waveform.shape[1])
-    if valid_samples < max_samples:
-        padding = max_samples - valid_samples
+    valid_frames = max(1, min(max_frames, valid_samples // samples_per_frame))
+
+    if pad_to_max:
+        padded_frames = max_frames
+    else:
+        alignment = max(1, frame_alignment)
+        padded_frames = min(
+            max_frames,
+            max(alignment, ((valid_frames + alignment - 1) // alignment) * alignment),
+        )
+    padded_samples = padded_frames * samples_per_frame
+
+    waveform = waveform[:, :padded_samples]
+    if valid_samples < padded_samples:
+        padding = padded_samples - valid_samples
         waveform = torch.nn.functional.pad(waveform, (0, padding))
 
     audio = waveform.transpose(0, 1).unsqueeze(0)
     # 模型每 1920 个采样点对应一帧表情，valid_frames 用于裁掉补零尾部。
-    valid_frames = max(1, min(max_samples // 1920, valid_samples // 1920))
     return audio.float(), valid_frames
